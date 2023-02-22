@@ -14,7 +14,7 @@ Make a phone call to chat with a bot.
 
 1. Follow this [guide](https://www.assemblyai.com/blog/transcribe-twilio-phone-calls-in-real-time-with-assemblyai/) to set up twilio and assemblyai
 2. Clone this repo
-3. Add your assemblyai credentials to the `.env` file by running `echo ASSEMBLYAI_API_KEY=<your api key> >> .env` in the root directory
+3. Add your assemblyai credentials to the `.env` file by running `echo "ASSEMBLYAI_API_KEY=<your api key>" >> .env` in the root directory
 4. run `npm install`
 5. run `npm start`
 
