@@ -1,22 +1,61 @@
 require('dotenv').config();
 const express = require("express");
-
+const expressWebSocket = require('express-ws');
 const WebSocket = require("ws");
 const WaveFile = require("wavefile").WaveFile;
+const { TextListener } = require("./text-listener.js");
 
 const app = express();
-const server = require("http").createServer(app);
-const wss = new WebSocket.Server({ server });
+expressWebSocket(app, null, {
+  perMessageDeflate: false,
+});
 
 let assembly;
 let chunks = [];
+/** @type {WebSocket} chatWebSocket */
+let chatWebSocket;
+/** @type {TextListener} textListener */
+let globalTextListener;
 
-wss.on("connection", (ws) => {
-  console.info("New Connection Initiated");
+app.ws("/chat", (ws, req) => {
+  ws.send(JSON.stringify({ type: "console", message: "Connected to chat server" }));
+  console.log("New Chat Connection Initiated");
+  chatWebSocket = ws;
+  ws.on("message", (message) => {
+    const msg = JSON.parse(message);
+    console.log('Chat message on server ws:', msg);
+    switch (msg.type) {
+      case "chatSent":
+        console.log("Chat sent:", msg.message);
+        break;
+      case "botResponse":
+        console.log("Bot response:", msg.message);
+        break;
+      case 'spokenText':
+        if (!globalTextListener) {
+          const textListener = new TextListener(chatWebSocket);
+          globalTextListener = textListener;
+        }
+        globalTextListener.forceState(msg.state);
+        globalTextListener.handleCommand('send-chat');
+
+        break;
+      default:
+        console.log("Unknown message type:", msg.type);
+        break;
+    }
+  });
+});
+
+app.ws("/call", (ws, req) => {
+  console.info("New Call Connection Initiated");
 
   ws.on("message", (message) => {
     if (!assembly)
       return console.error("AssemblyAI's WebSocket must be initialized.");
+
+    if (!chatWebSocket)
+      return console.error("ChatClint WebSocket must be initialized. Did you run chat-api in your chat window?");
 
     const msg = JSON.parse(message);
 
@@ -24,32 +63,18 @@ wss.on("connection", (ws) => {
       case "connected":
         console.info("A new call has started.");
         assembly.onerror = console.error;
-        let texts = {};
-        assembly.onmessage = (assemblyMsg) => {
-          let msg = '';
-      	  const res = JSON.parse(assemblyMsg.data);
-      	  texts[res.audio_start] = res.text;
-      	  const keys = Object.keys(texts);
-      	  keys.sort((a, b) => a - b);
-      	  for (const key of keys) {
-            if (texts[key]) {
-              msg += ` ${texts[key]}`;
-            }
-          }
-          if (msg.toLocaleLowerCase().includes('command') && msg.toLocaleLowerCase().includes('clear')) {
-            texts = {};
-            msg = 'Cleared';
-          }
-      	  console.log(msg);
-        };
-
+        if (!globalTextListener) {
+          const textListener = new TextListener(chatWebSocket);
+          globalTextListener = textListener;
+        }
+        assembly.onmessage = globalTextListener.onMessage.bind(globalTextListener);
         break;
 
       case "start":
         console.info("Starting media stream...");
         break;
 
-      case "media":       
+      case "media":
         const twilioData = msg.media.payload;
 
         // Here are the current options explored using the WaveFile lib:
@@ -107,10 +132,10 @@ app.post("/", async (req, res) => {
   res.send(
     `<Response>
        <Start>
-         <Stream url='wss://${req.headers.host}' />
+         <Stream url='wss://${req.headers.host}/call' />
        </Start>
        <Say>
-         Start speaking to see your audio transcribed in the console
+         Just a heads up, this call will be recorded and transcribed in real time.
        </Say>
        <Pause length='60' />
      </Response>`
@@ -118,4 +143,4 @@ app.post("/", async (req, res) => {
 });
 
 console.log("Listening on Port 8080");
-server.listen(8080);
+app.listen(8080);
