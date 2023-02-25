@@ -1,13 +1,24 @@
 const WebSocket = require("ws");
+const { SpeakingQueue } = require("./speaking-queue");
 
 class TextListener {
     /** @type {WebSocket} chatWebSocket */
     chatWebSocket;
 
+    /** @type {SpeakingQueue} */
+    speakingQueue;
+
+    /** @type {Object} */
+    texts;
+
+    /** @type {String} */
+    msg;
+
     constructor(chatWebSocket) {
         this.texts = {};
         this.msg = '';
         this.chatWebSocket = chatWebSocket;
+        this.speakingQueue = new SpeakingQueue();
     }
 
     forceState(state) {
@@ -40,8 +51,8 @@ class TextListener {
             detectedCommands.push('clear');
         }
 
-        if (this.msg.toLocaleLowerCase().includes('command') && this.msg.toLocaleLowerCase().includes('send chat')) {
-            detectedCommands.push('clear');
+        if (this.msg.toLocaleLowerCase().includes('command') && this.msg.toLocaleLowerCase().includes('send')) {
+            detectedCommands.push('send-chat');
         }
 
         return detectedCommands;
@@ -54,9 +65,12 @@ class TextListener {
                 this.msg = 'Cleared';
                 break;
             case 'send-chat':
+                this.chatWebSocket.send(JSON.stringify({ type: "console", message: JSON.stringify({ texts: this.texts, msg: this.msg }) }));
+                this.msg.toLocaleLowerCase().indexOf('command') > -1 && (this.msg = this.msg.replace(/command .*/g, '').trim());
                 this.chatWebSocket.send(JSON.stringify({ type: "sendChat", message: this.msg }));
                 this.texts = {};
                 this.msg = '';
+                this.speakingQueue.clear();
                 break;
             default:
                 break;

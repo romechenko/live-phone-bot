@@ -4,6 +4,8 @@ const expressWebSocket = require('express-ws');
 const WebSocket = require("ws");
 const WaveFile = require("wavefile").WaveFile;
 const { TextListener } = require("./text-listener.js");
+const { SpeakText } = require("./speaking-queue.js");
+const VoiceResponse = require('twilio').twiml.VoiceResponse;
 
 const app = express();
 expressWebSocket(app, null, {
@@ -23,13 +25,29 @@ app.ws("/chat", (ws, req) => {
   chatWebSocket = ws;
   ws.on("message", (message) => {
     const msg = JSON.parse(message);
-    console.log('Chat message on server ws:', msg);
     switch (msg.type) {
       case "chatSent":
         console.log("Chat sent:", msg.message);
         break;
       case "botResponse":
-        console.log("Bot response:", msg.message);
+        if (!globalTextListener) {
+          const textListener = new TextListener(chatWebSocket);
+          globalTextListener = textListener;
+        }
+        /** @type {String} */
+        const botResponse = msg.message;
+        const hasSentence = ((botResponse.match( /[\.\?!,]/ )?.length) ?? 0) > 0;
+        let textLeengthCounter = 0;
+        if (hasSentence) {
+          const sentencs = botResponse.match(/[^\.!\?,]+[\.!\?,]+/g);
+          for (const sentence of sentencs.slice(0, sentencs.length - 1)) {
+            textLeengthCounter += sentence.length;
+            if (textLeengthCounter > globalTextListener.speakingQueue.textLengthCounter) {
+              globalTextListener.speakingQueue.enqueue(new SpeakText(sentence));
+            }
+          }
+        }
+        console.log('queue state: ' + JSON.stringify(globalTextListener?.speakingQueue?.queue ?? []));
         break;
       case 'spokenText':
         if (!globalTextListener) {
@@ -98,7 +116,8 @@ app.ws("/call", (ws, req) => {
         chunks.push(twilioAudioBuffer.subarray(44));
 
         // We have to chunk data b/c twilio sends audio durations of ~20ms and AAI needs a min of 100ms
-        if (chunks.length >= 5) {
+        // Chunking to 200ms
+        if (chunks.length >= 10) {
           // Here we want to concat our buffer to create one single buffer
           const audioBuffer = Buffer.concat(chunks);
 
@@ -128,18 +147,39 @@ app.post("/", async (req, res) => {
     { headers: { authorization: process.env.ASSEMBLYAI_API_KEY } }
   );
 
-  res.set("Content-Type", "text/xml");
-  res.send(
-    `<Response>
-       <Start>
-         <Stream url='wss://${req.headers.host}/call' />
-       </Start>
-       <Say>
-         Just a heads up, this call will be recorded and transcribed in real time.
-       </Say>
-       <Pause length='60' />
-     </Response>`
-  );
+  const twiml = new VoiceResponse();
+  const start = twiml.start();
+  start.stream({
+    url: `wss://${req.headers.host}/call`,
+  });
+  twiml.say({ voice: "Polly.Matthew-Neural" }, "Just a heads up, this call will be recorded and transcribed in real time.");
+
+  twiml.redirect('/check');
+
+  res.type('text/xml');
+  res.send(twiml.toString());
+});
+
+app.post("/check", async (req, res) => {
+
+  if (!globalTextListener) {
+    const textListener = new TextListener(chatWebSocket);
+    globalTextListener = textListener;
+  }
+
+  const twiml = new VoiceResponse();
+
+  if (!globalTextListener.speakingQueue.isEmpty()) {
+    const text = globalTextListener.speakingQueue.dequeue();
+    twiml.say({ voice: "Polly.Matthew-Neural" }, text.text);
+  } else if (Object.keys(globalTextListener.texts).length == 0) {
+    twiml.pause({ length: 1 });
+  }
+
+  twiml.redirect('/check');
+
+  res.type('text/xml');
+  res.send(twiml.toString());
 });
 
 console.log("Listening on Port 8080");

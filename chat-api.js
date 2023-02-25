@@ -29,6 +29,16 @@
       setTimeout(() => button.click(), 0);
       chatWebSocket.send(JSON.stringify({ type: 'chatSent', message: message }));
       setTimeout(logLastSectionContent, 100);
+    },
+    simulateSpokenText: function (message) {
+      chatWebSocket.send(JSON.stringify({
+        'type': 'spokenText',
+        'state': {
+            'texts': {},
+            'msg': message
+            
+        }
+    }))
     }
   };
   window['api'] = api;
@@ -54,6 +64,7 @@
           compare();
         } else if (timeCounter > timeLimit) {
           console.log('paragraph content loaded');
+          chatWebSocket.send(JSON.stringify({ type: 'botResponse', message: divElement.textContent + '.' }));
         } else {
           timeCounter += 200;
           compare();
