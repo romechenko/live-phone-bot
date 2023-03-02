@@ -30,16 +30,12 @@ app.ws("/chat", (ws, req) => {
         console.log("Chat sent:", msg.message);
         break;
       case "botResponse":
-        if (!globalTextListener) {
-          const textListener = new TextListener(chatWebSocket);
-          globalTextListener = textListener;
-        }
         /** @type {String} */
         const botResponse = msg.message;
-        const hasSentence = ((botResponse.match( /[\.\?!,]/ )?.length) ?? 0) > 0;
+        const hasSentence = ((botResponse.match( /[\.\?!,:]/ )?.length) ?? 0) > 0;
         let textLeengthCounter = 0;
         if (hasSentence) {
-          const sentencs = botResponse.match(/[^\.!\?,]+[\.!\?,]+/g);
+          const sentencs = botResponse.match(/[^\.!\?,:]+[\.!\?,:]+/g);
           for (const sentence of sentencs.slice(0, sentencs.length - 1)) {
             textLeengthCounter += sentence.length;
             if (textLeengthCounter > globalTextListener.speakingQueue.textLengthCounter) {
@@ -50,10 +46,6 @@ app.ws("/chat", (ws, req) => {
         console.log('queue state: ' + JSON.stringify(globalTextListener?.speakingQueue?.queue ?? []));
         break;
       case 'spokenText':
-        if (!globalTextListener) {
-          const textListener = new TextListener(chatWebSocket);
-          globalTextListener = textListener;
-        }
         globalTextListener.forceState(msg.state);
         globalTextListener.handleCommand('send-chat');
 
@@ -81,10 +73,6 @@ app.ws("/call", (ws, req) => {
       case "connected":
         console.info("A new call has started.");
         assembly.onerror = console.error;
-        if (!globalTextListener) {
-          const textListener = new TextListener(chatWebSocket);
-          globalTextListener = textListener;
-        }
         assembly.onmessage = globalTextListener.onMessage.bind(globalTextListener);
         break;
 
@@ -116,8 +104,8 @@ app.ws("/call", (ws, req) => {
         chunks.push(twilioAudioBuffer.subarray(44));
 
         // We have to chunk data b/c twilio sends audio durations of ~20ms and AAI needs a min of 100ms
-        // Chunking to 200ms
-        if (chunks.length >= 10) {
+        // Chunking to 100ms
+        if (chunks.length >= 5) {
           // Here we want to concat our buffer to create one single buffer
           const audioBuffer = Buffer.concat(chunks);
 
@@ -156,22 +144,20 @@ app.post("/", async (req, res) => {
 
   twiml.redirect('/check');
 
+  globalTextListener = new TextListener(chatWebSocket);
+  globalTextListener.initialize();
+
   res.type('text/xml');
   res.send(twiml.toString());
 });
 
 app.post("/check", async (req, res) => {
 
-  if (!globalTextListener) {
-    const textListener = new TextListener(chatWebSocket);
-    globalTextListener = textListener;
-  }
-
   const twiml = new VoiceResponse();
 
   if (!globalTextListener.speakingQueue.isEmpty()) {
     const text = globalTextListener.speakingQueue.dequeue();
-    twiml.say({ voice: "Polly.Matthew-Neural" }, text.text);
+    twiml.say({ voice: globalTextListener.voice }, text.text);
   } else if (Object.keys(globalTextListener.texts).length == 0) {
     twiml.pause({ length: 1 });
   }
