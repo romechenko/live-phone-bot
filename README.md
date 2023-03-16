@@ -1,5 +1,17 @@
 # Live Phone Bot
 
+This code is a Node.js application that uses the Express.js framework and WebSocket to enable real-time transcription and bot interaction. It utilizes Twilio's voice API to capture a phone call's audio and AssemblyAI's WebSocket API to transcribe the call in real-time. The application also uses a Chat WebSocket to handle interactions with a chatbot.
+
+Here's a high-level overview of the code:
+
+Import necessary libraries and initialize Express.js and WebSocket.
+Declare necessary variables and instances.
+Set up WebSocket connections for chat and call.
+Define routes for the Express.js app.
+Handle incoming messages and events from the WebSocket connections.
+Start the application by listening on a specific port (8080).
+When a call is connected, the app will send the audio stream to AssemblyAI for real-time transcription. The transcription result is then processed by the TextListener class, which interacts with the chatbot through the Chat WebSocket. The chatbot's response is then sent back to the caller using Twilio's voice API.
+
 Make a phone call to chat with a bot.
 
 ## Tools Used
